@@ -106,8 +106,8 @@ export default function Ajustes({ contas, categorias, atualizar, tema, setTema, 
     <section className="pagina">
       <header className="pagina-topo"><h1>Ajustes</h1></header>
 
-      <div className="bloco">
-        <header className="bloco-topo"><h2>Contas</h2><button className="link" onClick={() => setFormConta({})}>Nova conta</button></header>
+      <div className="painel">
+        <header className="painel-topo"><h2>Contas</h2><button className="link" onClick={() => setFormConta({})}>Nova conta</button></header>
         <ul className="lista-contas clicavel">
           {contas.map(c => (
             <li key={c.id} onClick={() => setFormConta(c)} className={c.ativa ? '' : 'inativa'}>
@@ -118,8 +118,8 @@ export default function Ajustes({ contas, categorias, atualizar, tema, setTema, 
         </ul>
       </div>
 
-      <div className="bloco">
-        <header className="bloco-topo"><h2>Categorias</h2><button className="link" onClick={() => setFormCat({ tipo: tipoCat })}>Nova categoria</button></header>
+      <div className="painel">
+        <header className="painel-topo"><h2>Categorias</h2><button className="link" onClick={() => setFormCat({ tipo: tipoCat })}>Nova categoria</button></header>
         <div className="segmentos pequeno">
           <button className={tipoCat === 'despesa' ? 'ativo' : ''} onClick={() => setTipoCat('despesa')}>Despesas</button>
           <button className={tipoCat === 'receita' ? 'ativo' : ''} onClick={() => setTipoCat('receita')}>Receitas</button>
@@ -133,8 +133,8 @@ export default function Ajustes({ contas, categorias, atualizar, tema, setTema, 
         </div>
       </div>
 
-      <div className="bloco">
-        <header className="bloco-topo"><h2>Aparência</h2></header>
+      <div className="painel">
+        <header className="painel-topo"><h2>Aparência</h2></header>
         <div className="segmentos">
           {[['auto', 'Automático'], ['claro', 'Claro'], ['escuro', 'Escuro']].map(([id, n]) => (
             <button key={id} className={tema === id ? 'ativo' : ''} onClick={() => setTema(id)}>{n}</button>
@@ -142,8 +142,8 @@ export default function Ajustes({ contas, categorias, atualizar, tema, setTema, 
         </div>
       </div>
 
-      <div className="bloco">
-        <header className="bloco-topo"><h2>Sua conta</h2></header>
+      <div className="painel">
+        <header className="painel-topo"><h2>Sua conta</h2></header>
         <p className="sutil">Conectado como {email}</p>
         <button className="secundario" onClick={() => supabase.auth.signOut()}>Sair</button>
       </div>

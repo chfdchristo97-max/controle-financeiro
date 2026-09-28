@@ -1,13 +1,51 @@
 import React, { useMemo, useState } from 'react'
 import { supabase } from '../supabase'
 import Folha from './Folha.jsx'
-import { hojeISO, lerValor, valorParaCampo, somarMesesISO } from '../format'
+import { Icone } from './Icones.jsx'
+import { hojeISO, isoData, lerValor, valorParaCampo, somarMesesISO, moeda } from '../format'
 
-const TIPOS = [
-  { id: 'despesa', nome: 'Despesa' },
-  { id: 'receita', nome: 'Receita' },
-  { id: 'transferencia', nome: 'Transferência' },
-]
+const TIPOS = [['despesa', 'Despesa'], ['receita', 'Receita'], ['transferencia', 'Transferência']]
+const TITULOS = { despesa: 'despesa', receita: 'receita', transferencia: 'transferência' }
+
+function dataCurta(iso) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}${y !== String(new Date().getFullYear()) ? '/' + y.slice(2) : ''}`
+}
+
+function EscolhaData({ valor, mudar, rotulo = 'Data' }) {
+  const hoje = hojeISO()
+  const ontem = isoData(new Date(Date.now() - 864e5))
+  const outra = valor !== hoje && valor !== ontem
+  return (
+    <div className="campo">
+      <span className="rotulo">{rotulo}</span>
+      <div className="pilulas">
+        <button className={`pilula ${valor === hoje ? 'ativo' : ''}`} onClick={() => mudar(hoje)}>Hoje</button>
+        <button className={`pilula ${valor === ontem ? 'ativo' : ''}`} onClick={() => mudar(ontem)}>Ontem</button>
+        <label className={`pilula pilula-data ${outra ? 'ativo' : ''}`}>
+          <Icone nome="calendario" tamanho={15} />
+          <span>{outra ? dataCurta(valor) : 'Outra data'}</span>
+          <input type="date" value={valor} onChange={e => e.target.value && mudar(e.target.value)} aria-label="Escolher data" />
+        </label>
+      </div>
+    </div>
+  )
+}
+
+function EscolhaConta({ contas, valor, mudar, rotulo, excluir }) {
+  return (
+    <div className="campo">
+      <span className="rotulo">{rotulo}</span>
+      <div className="pilulas rolagem">
+        {contas.filter(c => c.id !== excluir).map(c => (
+          <button key={c.id} className={`pilula ${valor === c.id ? 'ativo' : ''}`} onClick={() => mudar(c.id)}>
+            <i className="bolinha" style={{ background: c.cor }} />{c.nome}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function LancamentoForm({ inicial, contas, categorias, fechar, salvou }) {
   const editando = Boolean(inicial.id)
@@ -30,7 +68,7 @@ export default function LancamentoForm({ inicial, contas, categorias, fechar, sa
   const cats = useMemo(() => categorias.filter(c => c.tipo === tipo), [categorias, tipo])
 
   function trocarTipo(t) {
-    setTipo(t)
+    setTipo(t); setErro(null)
     if (t === 'transferencia') { setCategoriaId(''); setParcelado(false) }
     else if (!categorias.find(c => c.id === categoriaId && c.tipo === t)) setCategoriaId('')
   }
@@ -40,9 +78,9 @@ export default function LancamentoForm({ inicial, contas, categorias, fechar, sa
     const v = lerValor(valor)
     if (!(v > 0)) return setErro('Informe um valor maior que zero.')
     if (!contaId) return setErro('Escolha uma conta. Você pode criar contas em Ajustes.')
-    if (tipo === 'transferencia' && (!destinoId || destinoId === contaId)) return setErro('Escolha uma conta de destino diferente da de origem.')
+    if (tipo === 'transferencia' && (!destinoId || destinoId === contaId)) return setErro('Escolha a conta de destino.')
     const base = {
-      tipo, valor: v, descricao: descricao.trim(), data, pago,
+      tipo, valor: v, descricao: descricao.trim(), data, pago: tipo === 'transferencia' ? true : pago,
       conta_id: contaId,
       conta_destino_id: tipo === 'transferencia' ? destinoId : null,
       categoria_id: tipo === 'transferencia' ? null : (categoriaId || null),
@@ -76,8 +114,7 @@ export default function LancamentoForm({ inicial, contas, categorias, fechar, sa
   }
 
   async function excluir(tudo) {
-    const pergunta = tudo ? 'Excluir todas as parcelas deste parcelamento?' : 'Excluir este lançamento?'
-    if (!window.confirm(pergunta)) return
+    if (!window.confirm(tudo ? 'Excluir todas as parcelas deste parcelamento?' : 'Excluir este lançamento?')) return
     setOcupado(true)
     const res = tudo
       ? await supabase.from('parcelamentos').delete().eq('id', inicial.parcelamento_id)
@@ -87,119 +124,106 @@ export default function LancamentoForm({ inicial, contas, categorias, fechar, sa
     else salvou()
   }
 
-  const titulo = editando ? 'Editar lançamento' : 'Novo lançamento'
+  const total = parseInt(totalParcelas, 10) || 0, pagasN = parseInt(jaPagas, 10) || 0, vNum = lerValor(valor) || 0
 
   return (
-    <Folha titulo={titulo} fechar={fechar} rodape={
+    <Folha cheia titulo={editando ? 'Editar lançamento' : `Nova ${TITULOS[tipo]}`} fechar={fechar} rodape={
       <>
         {erro && <p className="aviso erro">{erro}</p>}
-        <button className="primario" onClick={salvar} disabled={ocupado}>{ocupado ? 'Salvando…' : editando ? 'Salvar alterações' : 'Adicionar lançamento'}</button>
+        <button className="primario" onClick={salvar} disabled={ocupado}>
+          {ocupado ? 'Salvando…' : editando ? 'Salvar alterações' : parcelado ? `Lançar ${Math.max(total - pagasN, 0)} parcelas` : 'Salvar'}
+        </button>
       </>
     }>
-      <div className={`segmentos tipo-${tipo}`} role="radiogroup" aria-label="Tipo">
-        {TIPOS.map(t => (
-          <button key={t.id} role="radio" aria-checked={tipo === t.id} className={tipo === t.id ? 'ativo' : ''}
-            onClick={() => trocarTipo(t.id)} disabled={ehParcela && t.id === 'transferencia'}>{t.nome}</button>
+      <div className="segmentos" role="radiogroup" aria-label="Tipo">
+        {TIPOS.map(([id, nome]) => (
+          <button key={id} role="radio" aria-checked={tipo === id} className={`seg-${id} ${tipo === id ? 'ativo' : ''}`}
+            onClick={() => trocarTipo(id)} disabled={ehParcela && id === 'transferencia'}>{nome}</button>
         ))}
       </div>
 
-      <label className="campo-valor">
-        <span>{parcelado ? 'Valor de cada parcela' : 'Valor'}</span>
-        <div className={`valor-entrada tipo-${tipo}`}>
+      <label className={`valor-grande tipo-${tipo}`}>
+        <span className="rotulo">{parcelado ? 'Valor de cada parcela' : 'Valor'}</span>
+        <span className="valor-linha">
           <b>R$</b>
           <input inputMode="decimal" placeholder="0,00" value={valor} autoFocus={!editando}
-            onChange={e => setValor(e.target.value)}
+            style={{ width: `${Math.max(valor.length, 4) + 0.6}ch` }}
+            onChange={e => setValor(e.target.value.replace(/[^\d.,]/g, ''))}
             onBlur={() => { const v = lerValor(valor); if (v > 0) setValor(valorParaCampo(v)) }} />
-        </div>
+        </span>
       </label>
 
-      <label className="campo">Descrição
-        <input value={descricao} onChange={e => setDescricao(e.target.value)} placeholder={tipo === 'receita' ? 'Ex: Salário de setembro' : tipo === 'despesa' ? 'Ex: Mercado' : 'Ex: Reserva do mês'} />
-      </label>
+      <input className="descricao" value={descricao} onChange={e => setDescricao(e.target.value)}
+        placeholder={tipo === 'receita' ? 'Descrição (ex: salário)' : tipo === 'despesa' ? 'Descrição (ex: mercado)' : 'Descrição (opcional)'} />
 
       {tipo !== 'transferencia' && (
         <div className="campo">
-          <span>Categoria</span>
-          <div className="chips">
+          <span className="rotulo">Categoria</span>
+          <div className="grade-cats">
             {cats.map(c => (
-              <button key={c.id} className={`chip ${categoriaId === c.id ? 'ativo' : ''}`} style={{ '--cor': c.cor }}
-                onClick={() => setCategoriaId(categoriaId === c.id ? '' : c.id)}>
-                <span aria-hidden="true">{c.icone}</span>{c.nome}
+              <button key={c.id} className={`tile ${categoriaId === c.id ? 'ativo' : ''}`} style={{ '--cor': c.cor }}
+                onClick={() => setCategoriaId(categoriaId === c.id ? '' : c.id)} aria-pressed={categoriaId === c.id}>
+                <span className="tile-emoji" aria-hidden="true">{c.icone}</span>
+                <span className="tile-nome">{c.nome}</span>
               </button>
             ))}
-            {cats.length === 0 && <p className="sutil">Nenhuma categoria de {tipo}. Crie em Ajustes.</p>}
           </div>
+          {cats.length === 0 && <p className="sutil">Nenhuma categoria de {tipo}. Crie em Ajustes.</p>}
         </div>
       )}
 
-      <div className="linha-2">
-        <label className="campo">{tipo === 'transferencia' ? 'De' : 'Conta'}
-          <select value={contaId} onChange={e => setContaId(e.target.value)}>
-            {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-          </select>
-        </label>
-        {tipo === 'transferencia' ? (
-          <label className="campo">Para
-            <select value={destinoId} onChange={e => setDestinoId(e.target.value)}>
-              <option value="">Escolha…</option>
-              {contas.filter(c => c.id !== contaId).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
-          </label>
-        ) : (
-          <label className="campo">{parcelado ? 'Próxima parcela' : 'Data'}
-            <input type="date" value={data} onChange={e => setData(e.target.value)} required />
-          </label>
-        )}
-      </div>
-      {tipo === 'transferencia' && (
-        <label className="campo">Data
-          <input type="date" value={data} onChange={e => setData(e.target.value)} required />
-        </label>
+      {tipo === 'transferencia' ? (
+        <>
+          <EscolhaConta contas={contas} valor={contaId} mudar={(id) => { setContaId(id); if (id === destinoId) setDestinoId('') }} rotulo="Sai de" />
+          <EscolhaConta contas={contas} valor={destinoId} mudar={setDestinoId} rotulo="Vai para" excluir={contaId} />
+        </>
+      ) : (
+        <EscolhaConta contas={contas} valor={contaId} mudar={setContaId} rotulo="Conta" />
       )}
 
-      <label className="alternar">
-        <input type="checkbox" checked={pago} onChange={e => setPago(e.target.checked)} />
-        <span className="trilho" aria-hidden="true" />
-        <span>{tipo === 'receita' ? 'Já recebido' : 'Já pago'}{parcelado ? ' (esta parcela)' : ''}</span>
-      </label>
+      <EscolhaData valor={data} mudar={setData} rotulo={parcelado ? 'Próxima parcela' : 'Data'} />
 
-      {!editando && tipo !== 'transferencia' && (
-        <label className="alternar">
-          <input type="checkbox" checked={parcelado} onChange={e => setParcelado(e.target.checked)} />
-          <span className="trilho" aria-hidden="true" />
-          <span>Parcelado</span>
-        </label>
-      )}
-
-      {parcelado && (
-        <div className="caixa-parcelas">
-          <div className="linha-2">
-            <label className="campo">Total de parcelas
-              <input inputMode="numeric" value={totalParcelas} onChange={e => setTotalParcelas(e.target.value.replace(/\D/g, ''))} />
+      {tipo !== 'transferencia' && (
+        <div className="grupo-opcoes">
+          <label className="alternar">
+            <span>{tipo === 'receita' ? 'Já recebido' : 'Já pago'}{parcelado ? ' (esta parcela)' : ''}</span>
+            <input type="checkbox" checked={pago} onChange={e => setPago(e.target.checked)} />
+            <span className="trilho" aria-hidden="true" />
+          </label>
+          {!editando && (
+            <label className="alternar">
+              <span>Parcelado</span>
+              <input type="checkbox" checked={parcelado} onChange={e => setParcelado(e.target.checked)} />
+              <span className="trilho" aria-hidden="true" />
             </label>
-            <label className="campo">Já pagas antes
-              <input inputMode="numeric" value={jaPagas} onChange={e => setJaPagas(e.target.value.replace(/\D/g, ''))} />
-            </label>
-          </div>
-          <p className="sutil">
-            {(() => { const t = parseInt(totalParcelas, 10) || 0, p = parseInt(jaPagas, 10) || 0, v = lerValor(valor) || 0
-              return t > p ? `Serão lançadas ${t - p} parcelas mensais, da ${p + 1}ª à ${t}ª. As que você já pagou não mexem no seu saldo.` + (v ? ` Restante: ${((t - p) * v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.` : '') : '' })()}
-          </p>
+          )}
+          {parcelado && (
+            <div className="parcelas">
+              <label className="campo-mini">Total de parcelas
+                <input inputMode="numeric" value={totalParcelas} onChange={e => setTotalParcelas(e.target.value.replace(/\D/g, ''))} />
+              </label>
+              <label className="campo-mini">Já pagas antes
+                <input inputMode="numeric" value={jaPagas} onChange={e => setJaPagas(e.target.value.replace(/\D/g, ''))} />
+              </label>
+              {total > pagasN && (
+                <p className="sutil">Da {pagasN + 1}ª à {total}ª parcela, uma por mês{vNum ? `, somando ${moeda((total - pagasN) * vNum)}` : ''}. As já pagas não mexem no seu saldo.</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {ehParcela && (
-        <p className="sutil">Parcela {inicial.parcela_numero} de {inicial.parcelamentos?.total_parcelas}. Alterações valem só para esta parcela.</p>
-      )}
+      {ehParcela && <p className="sutil">Parcela {inicial.parcela_numero} de {inicial.parcelamentos?.total_parcelas}. Alterações valem só para esta parcela.</p>}
 
-      <label className="campo">Observação
+      <label className="campo">
+        <span className="rotulo">Observação</span>
         <textarea rows="2" value={observacao} onChange={e => setObservacao(e.target.value)} />
       </label>
 
       {editando && (
         <div className="acoes-excluir">
-          <button className="perigo" onClick={() => excluir(false)} disabled={ocupado}>{ehParcela ? 'Excluir esta parcela' : 'Excluir lançamento'}</button>
-          {ehParcela && <button className="perigo" onClick={() => excluir(true)} disabled={ocupado}>Excluir parcelamento inteiro</button>}
+          <button className="perigo" onClick={() => excluir(false)} disabled={ocupado}><Icone nome="lixo" tamanho={16} />{ehParcela ? 'Excluir esta parcela' : 'Excluir lançamento'}</button>
+          {ehParcela && <button className="perigo" onClick={() => excluir(true)} disabled={ocupado}><Icone nome="lixo" tamanho={16} />Excluir parcelamento inteiro</button>}
         </div>
       )}
     </Folha>

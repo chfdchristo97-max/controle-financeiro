@@ -1,6 +1,6 @@
 // Service worker simples: guarda os arquivos do app para abrir mais rápido.
 // Os dados financeiros sempre vêm da nuvem (não ficam em cache).
-const CACHE = 'cf-v1';
+const CACHE = 'cf-v2';
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
